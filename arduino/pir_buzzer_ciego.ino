@@ -1,39 +1,47 @@
 /*
  * ============================================================
- *  Proyecto: Alerta para Personas Ciegas - v3.0
+ *  Proyecto: Alerta para Personas Ciegas - v4.0
  *  Hardware: Arduino Uno + PIR HC-SR501 + HC-SR04 + Buzzer
  *
- *  PIR HC-SR501 → detecta presencia: sirena que sube urgencia
- *  HC-SR04      → mide distancia: pitidos (más cerca = más rápido)
- *  Prioridad: HC-SR04 > PIR (lo cercano es más urgente)
+ *  Lógica de fusión de sensores:
+ *
+ *  PIR solo         → calor detectado, sirena suave (puede ser
+ *                     animal pequeño, corriente caliente, etc.)
+ *  HC-SR04 solo     → objeto cercano sin calor (mueble, pared)
+ *                     → pitidos simples, NO es persona
+ *  PIR + HC-SR04    → calor Y objeto en rango al mismo tiempo
+ *                     → PERSONA CONFIRMADA, alerta máxima
+ *
+ *  Filtro anti-falsas: el PIR debe mantenerse en HIGH durante
+ *  500 ms continuos antes de considerarse válido. Así se
+ *  descartan animales pequeños y picos de calor breves.
  * ============================================================
  */
 
-// ── Pines ────────────────────────────────────────────────────
 const int PIR_PIN    = 2;
 const int TRIG_PIN   = 7;
 const int ECHO_PIN   = 8;
 const int BUZZER_PIN = 9;
 const int LED_PIN    = 13;
 
-// ── Distancia máxima HC-SR04 ──────────────────────────────────
-const float DIST_MAX = 150.0;  // cm (1.5 metros)
+const float          DIST_MAX     = 150.0;  // cm (1.5 m)
+const unsigned long  PIR_CONFIRM  = 500;    // ms continuos para validar PIR
 
-// ── Sirena PIR ────────────────────────────────────────────────
+// Sirena
 const int FREQ_MIN  = 1000;
 const int FREQ_MAX  = 2800;
 const int FREQ_PASO = 25;
-int  freqActual     = FREQ_MIN;
-int  freqDir        = 1;
+int freqActual      = FREQ_MIN;
+int freqDir         = 1;
 
-// ── Tiempos (non-blocking) ────────────────────────────────────
-unsigned long tiempoDeteccionPIR = 0;
-unsigned long ultimoStepSirena   = 0;
-unsigned long ultimaMedicion     = 0;
-unsigned long ultimoPitido       = 0;
+// Tiempos
+unsigned long pirStartTime    = 0;
+unsigned long ultimoStep      = 0;
+unsigned long ultimaMedicion  = 0;
+unsigned long ultimoPitido    = 0;
 
-// ── Distancia cacheada ────────────────────────────────────────
-float distancia = 999.0;
+float distancia   = 999.0;
+bool  personaLog  = false;  // para imprimir el mensaje solo una vez
 
 // ─────────────────────────────────────────────────────────────
 void setup() {
@@ -44,7 +52,7 @@ void setup() {
   pinMode(LED_PIN,    OUTPUT);
 
   Serial.begin(9600);
-  Serial.println(F("=== Alerta PIR + Ultrasonico v3.0 ==="));
+  Serial.println(F("=== Alerta PIR + Ultrasonico v4.0 ==="));
   Serial.println(F("Calentando sensor PIR (30s)..."));
 
   for (int i = 30; i > 0; i--) {
@@ -55,7 +63,7 @@ void setup() {
     digitalWrite(LED_PIN, LOW);  delay(250);
   }
 
-  Serial.println(F("\nSistema listo."));
+  Serial.println(F("\nSistema listo. Monitoreando..."));
   melodiaInicio();
 }
 
@@ -63,31 +71,46 @@ void setup() {
 void loop() {
   unsigned long ahora = millis();
 
-  // Leer PIR
-  bool pirDetecta = (digitalRead(PIR_PIN) == HIGH);
-  if (pirDetecta && tiempoDeteccionPIR == 0) tiempoDeteccionPIR = ahora;
-  if (!pirDetecta) tiempoDeteccionPIR = 0;
+  // ── 1. Leer PIR con filtro de tiempo ─────────────────────
+  bool pirRaw = (digitalRead(PIR_PIN) == HIGH);
+  if (pirRaw) {
+    if (pirStartTime == 0) pirStartTime = ahora;
+  } else {
+    pirStartTime = 0;
+    personaLog   = false;
+  }
+  // Solo se considera válido si lleva ≥500 ms continuo en HIGH
+  bool pirValido = pirRaw && ((ahora - pirStartTime) >= PIR_CONFIRM);
 
-  // Medir distancia cada 80ms (no medir continuamente para no saturar)
+  // ── 2. Medir HC-SR04 cada 80 ms ──────────────────────────
   if (ahora - ultimaMedicion >= 80) {
     ultimaMedicion = ahora;
     distancia = medirDistancia();
-
     if (distancia <= DIST_MAX) {
-      Serial.print(F("Distancia: "));
-      Serial.print(distancia, 1);
-      Serial.println(F(" cm"));
+      Serial.print(F("HC-SR04: ")); Serial.print(distancia, 1); Serial.println(F(" cm"));
     }
   }
+  bool sonicValido = (distancia <= DIST_MAX);
 
-  bool sonicDetecta = (distancia <= DIST_MAX);
+  // ── 3. Fusión de sensores ─────────────────────────────────
+  if (pirValido && sonicValido) {
+    // Ambos confirman: PERSONA REAL → alerta máxima
+    if (!personaLog) {
+      personaLog = true;
+      Serial.println(F(">>> PERSONA CONFIRMADA (PIR + HC-SR04) <<<"));
+    }
+    alertaMaxima(ahora);
 
-  // ── Prioridad: HC-SR04 tiene prioridad sobre PIR ──────────
-  if (sonicDetecta) {
-    pitidoUltrasonico(ahora, distancia);
-  } else if (pirDetecta) {
-    sirena(ahora);
+  } else if (pirValido && !sonicValido) {
+    // Solo calor, fuera del rango ultrasónico: sirena moderada
+    sirena(ahora, pirStartTime);
+
+  } else if (sonicValido && !pirRaw) {
+    // Objeto sin calor: NO es persona, pitidos informativos
+    pitidoProximidad(ahora, distancia);
+
   } else {
+    // Nada → silencio
     noTone(BUZZER_PIN);
     digitalWrite(LED_PIN, LOW);
     freqActual = FREQ_MIN;
@@ -96,52 +119,66 @@ void loop() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Pitidos para HC-SR04: más cerca = pitidos más rápidos
-//   0 –  50 cm → pitido cada 100 ms (muy urgente)
-//  50 – 100 cm → pitido cada 300 ms
-// 100 – 150 cm → pitido cada 600 ms
+// Alerta máxima: sirena a máxima velocidad + LED fijo
+// Se activa solo cuando PIR y HC-SR04 coinciden (persona real)
 // ─────────────────────────────────────────────────────────────
-void pitidoUltrasonico(unsigned long ahora, float dist) {
-  unsigned long intervalo;
-  if      (dist <= 50)  intervalo = 100;
-  else if (dist <= 100) intervalo = 300;
-  else                  intervalo = 600;
-
-  if (ahora - ultimoPitido >= intervalo) {
-    ultimoPitido = ahora;
-    tone(BUZZER_PIN, 2600, 60);
-    digitalWrite(LED_PIN, HIGH);
-    delay(60);
-    digitalWrite(LED_PIN, LOW);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────
-// Sirena para PIR: barre frecuencia. Más tiempo = más urgente.
-// ─────────────────────────────────────────────────────────────
-void sirena(unsigned long ahora) {
-  unsigned long enAlerta = (tiempoDeteccionPIR > 0) ? ahora - tiempoDeteccionPIR : 0;
-
-  unsigned long intervalo;
-  if      (enAlerta < 3000) intervalo = 8;
-  else if (enAlerta < 6000) intervalo = 4;
-  else                      intervalo = 2;
-
-  if (ahora - ultimoStepSirena < intervalo) return;
-  ultimoStepSirena = ahora;
+void alertaMaxima(unsigned long ahora) {
+  if (ahora - ultimoStep < 2) return;
+  ultimoStep = ahora;
 
   freqActual += freqDir * FREQ_PASO;
   if (freqActual >= FREQ_MAX) { freqActual = FREQ_MAX; freqDir = -1; }
   if (freqActual <= FREQ_MIN) { freqActual = FREQ_MIN; freqDir =  1; }
 
   tone(BUZZER_PIN, freqActual);
+  digitalWrite(LED_PIN, HIGH);  // LED fijo encendido: máxima urgencia
+}
 
+// ─────────────────────────────────────────────────────────────
+// Sirena moderada: solo PIR activo (posible persona lejana)
+// La velocidad aumenta cuanto más tiempo lleva detectando
+// ─────────────────────────────────────────────────────────────
+void sirena(unsigned long ahora, unsigned long inicio) {
+  unsigned long enAlerta = ahora - inicio;
+
+  unsigned long intervalo;
+  if      (enAlerta < 3000) intervalo = 8;
+  else if (enAlerta < 6000) intervalo = 4;
+  else                      intervalo = 2;
+
+  if (ahora - ultimoStep < intervalo) return;
+  ultimoStep = ahora;
+
+  freqActual += freqDir * FREQ_PASO;
+  if (freqActual >= FREQ_MAX) { freqActual = FREQ_MAX; freqDir = -1; }
+  if (freqActual <= FREQ_MIN) { freqActual = FREQ_MIN; freqDir =  1; }
+
+  tone(BUZZER_PIN, freqActual);
   int centro = (FREQ_MIN + FREQ_MAX) / 2;
   digitalWrite(LED_PIN, abs(freqActual - centro) > 600 ? HIGH : LOW);
 }
 
 // ─────────────────────────────────────────────────────────────
-// Mide distancia con HC-SR04. Devuelve cm. 999 = sin respuesta.
+// Pitidos de proximidad: solo HC-SR04, sin calor
+// Más cerca = pitidos más rápidos
+// ─────────────────────────────────────────────────────────────
+void pitidoProximidad(unsigned long ahora, float dist) {
+  unsigned long intervalo;
+  if      (dist <= 50)  intervalo = 120;
+  else if (dist <= 100) intervalo = 350;
+  else                  intervalo = 700;
+
+  if (ahora - ultimoPitido < intervalo) return;
+  ultimoPitido = ahora;
+
+  tone(BUZZER_PIN, 2200, 50);
+  digitalWrite(LED_PIN, HIGH);
+  delay(50);
+  digitalWrite(LED_PIN, LOW);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Devuelve distancia en cm. 999 = sin respuesta (fuera de rango)
 // ─────────────────────────────────────────────────────────────
 float medirDistancia() {
   digitalWrite(TRIG_PIN, LOW);
@@ -150,9 +187,9 @@ float medirDistancia() {
   delayMicroseconds(10);
   digitalWrite(TRIG_PIN, LOW);
 
-  long duracion = pulseIn(ECHO_PIN, HIGH, 30000); // timeout 30ms ≈ 5m
-  if (duracion == 0) return 999.0;
-  return duracion / 58.2;
+  long dur = pulseIn(ECHO_PIN, HIGH, 30000); // timeout 30ms ≈ 5 m
+  if (dur == 0) return 999.0;
+  return dur / 58.2;
 }
 
 // ─────────────────────────────────────────────────────────────
