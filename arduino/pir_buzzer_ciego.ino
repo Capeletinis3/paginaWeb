@@ -27,10 +27,10 @@ const int LED_PIN    = 13;
 const float          DIST_MAX     = 150.0;  // cm (1.5 m)
 const unsigned long  PIR_CONFIRM  = 500;    // ms continuos para validar PIR
 
-// Sirena
-const int FREQ_MIN  = 1000;
-const int FREQ_MAX  = 2800;
-const int FREQ_PASO = 25;
+// Tonos suaves (rango grave, menos molesto)
+const int FREQ_MIN  = 350;
+const int FREQ_MAX  = 650;
+const int FREQ_PASO = 8;
 int freqActual      = FREQ_MIN;
 int freqDir         = 1;
 
@@ -123,7 +123,7 @@ void loop() {
 // Se activa solo cuando PIR y HC-SR04 coinciden (persona real)
 // ─────────────────────────────────────────────────────────────
 void alertaMaxima(unsigned long ahora) {
-  if (ahora - ultimoStep < 2) return;
+  if (ahora - ultimoStep < 6) return;
   ultimoStep = ahora;
 
   freqActual += freqDir * FREQ_PASO;
@@ -164,16 +164,20 @@ void sirena(unsigned long ahora, unsigned long inicio) {
 // ─────────────────────────────────────────────────────────────
 void pitidoProximidad(unsigned long ahora, float dist) {
   unsigned long intervalo;
-  if      (dist <= 50)  intervalo = 120;
-  else if (dist <= 100) intervalo = 350;
-  else                  intervalo = 700;
+  if      (dist <= 50)  intervalo = 300;
+  else if (dist <= 100) intervalo = 600;
+  else                  intervalo = 1000;
 
   if (ahora - ultimoPitido < intervalo) return;
   ultimoPitido = ahora;
 
-  tone(BUZZER_PIN, 2200, 50);
+  // Dos tonos suaves tipo "din-don" en lugar de un pitido agudo
+  tone(BUZZER_PIN, 520, 80);
   digitalWrite(LED_PIN, HIGH);
-  delay(50);
+  delay(100);
+  tone(BUZZER_PIN, 440, 80);
+  delay(100);
+  noTone(BUZZER_PIN);
   digitalWrite(LED_PIN, LOW);
 }
 
