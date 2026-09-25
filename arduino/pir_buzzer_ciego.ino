@@ -1,30 +1,31 @@
 /*
  * ============================================================
  *  Proyecto: Alerta para Personas Ciegas
- *  Hardware: Arduino Nano + Sensor IR-08H + Buzzer Pasivo + LED
+ *  Hardware: Arduino Nano + HC-SR04 + Buzzer Pasivo + LED
  *
- *  El sensor IR-08H detecta obstáculos y pone OUT en LOW.
- *  El rango se ajusta con el potenciómetro del módulo.
+ *  Detecta objetos hasta 150 cm. Más cerca = pitidos más rápidos.
  * ============================================================
  */
 
-const int IR_PIN     = 2;   // OUT del IR-08H
-const int EN_PIN     = 3;   // EN  del IR-08H (LOW = activo)
-const int BUZZER_PIN = 9;   // Buzzer pasivo (pin PWM)
-const int LED_PIN    = 13;  // LED integrado del Nano
+const int TRIG_PIN   = 7;
+const int ECHO_PIN   = 8;
+const int BUZZER_PIN = 9;
+const int LED_PIN    = 13;
+
+const float DIST_MAX = 150.0;  // cm (1.5 m)
 
 unsigned long ultimoPitido = 0;
 unsigned long ultimoLED    = 0;
-bool ledEstado = false;
+unsigned long ultimaMedicion = 0;
+float distancia = 999.0;
+bool  ledEstado = false;
 
 // ─────────────────────────────────────────────────────────────
 void setup() {
-  pinMode(IR_PIN,     INPUT);
-  pinMode(EN_PIN,     OUTPUT);
+  pinMode(TRIG_PIN,   OUTPUT);
+  pinMode(ECHO_PIN,   INPUT);
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(LED_PIN,    OUTPUT);
-
-  digitalWrite(EN_PIN, LOW);  // activar sensor
 
   Serial.begin(9600);
   Serial.println("Sistema listo.");
@@ -37,15 +38,22 @@ void setup() {
 void loop() {
   unsigned long ahora = millis();
 
-  // IR-08H: LOW = obstáculo detectado
-  bool detecta = (digitalRead(IR_PIN) == LOW);
+  // Medir cada 80 ms
+  if (ahora - ultimaMedicion >= 80) {
+    ultimaMedicion = ahora;
+    distancia = medirDistancia();
+    if (distancia <= DIST_MAX) {
+      Serial.print("Distancia: ");
+      Serial.print(distancia, 1);
+      Serial.println(" cm");
+    }
+  }
 
-  if (detecta) {
-    Serial.println("Obstaculo detectado!");
-    pitido(ahora);
+  if (distancia <= DIST_MAX) {
+    pitido(ahora, distancia);
   } else {
     noTone(BUZZER_PIN);
-    // LED parpadea suave cuando no hay obstáculo (sistema activo)
+    // LED parpadea suave: sistema activo, sin obstáculo
     if (ahora - ultimoLED >= 600) {
       ultimoLED = ahora;
       ledEstado = !ledEstado;
@@ -55,15 +63,18 @@ void loop() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Pitido din-don cada 400 ms mientras haya obstáculo
+// Más cerca = pitidos más rápidos
+//   0 –  50 cm → cada 300 ms
+//  50 – 100 cm → cada 600 ms
+// 100 – 150 cm → cada 1000 ms
 // ─────────────────────────────────────────────────────────────
-void pitido(unsigned long ahora) {
-  if (ahora - ultimoPitido < 400) return;
+void pitido(unsigned long ahora, float dist) {
+  unsigned long intervalo = (dist <= 50) ? 300 : (dist <= 100) ? 600 : 1000;
+  if (ahora - ultimoPitido < intervalo) return;
   ultimoPitido = ahora;
 
   tone(BUZZER_PIN, 520, 80);
-  digitalWrite(LED_PIN, HIGH);
-  delay(100);
+  digitalWrite(LED_PIN, HIGH); delay(100);
   tone(BUZZER_PIN, 440, 80);
   delay(100);
   noTone(BUZZER_PIN);
@@ -71,7 +82,16 @@ void pitido(unsigned long ahora) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Jingle de inicio al encender el Nano
+float medirDistancia() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  long dur = pulseIn(ECHO_PIN, HIGH, 30000);
+  return (dur == 0) ? 999.0 : dur / 58.2;
+}
+
 // ─────────────────────────────────────────────────────────────
 void jingleEmpresa() {
   tone(BUZZER_PIN, 880, 100); delay(150);
