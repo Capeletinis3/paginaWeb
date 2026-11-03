@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Proyecto Alerta para Personas Ciegas — Arduino PIR + Buzzer</title>
+  <style>
+    /* ── Reset y base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --azul:      #1a6fbe;
+      --azul-osc:  #0d4f8c;
+      --verde:     #1c8a4a;
+      --naranja:   #d97706;
+      --rojo:      #c0392b;
+      --gris-bg:   #f4f6fa;
+      --gris-borde:#dce1ea;
+      --texto:     #1e2430;
+      --codigo-bg: #0f1117;
+      --codigo-fg: #e2e8f0;
+      --font-mono: 'Courier New', Courier, monospace;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--gris-bg);
+      color: var(--texto);
+      line-height: 1.7;
+    }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, var(--azul-osc) 0%, var(--azul) 100%);
+      color: #fff;
+      padding: 3rem 2rem 2.5rem;
+      text-align: center;
+    }
+    header .icono { font-size: 3.5rem; display: block; margin-bottom: .6rem; }
+    header h1 { font-size: clamp(1.5rem, 4vw, 2.4rem); font-weight: 700; margin-bottom: .5rem; }
+    header p  { font-size: 1.1rem; opacity: .88; max-width: 640px; margin: 0 auto; }
+
+    /* ── Layout ── */
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem;
+      display: grid;
+      gap: 2rem;
+    }
+
+    /* ── Tarjetas ── */
+    .card {
+      background: #fff;
+      border: 1px solid var(--gris-borde);
+      border-radius: 12px;
+      padding: 1.75rem 2rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    }
+    .card h2 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 1.1rem;
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+    }
+    .card h2 .tag {
+      font-size: .72rem;
+      font-weight: 600;
+      background: var(--azul);
+      color: #fff;
+      border-radius: 20px;
+      padding: .15rem .65rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    /* ── Componentes ── */
+    .componentes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1rem;
+    }
+    .comp {
+      border: 1px solid var(--gris-borde);
+      border-radius: 10px;
+      padding: 1rem 1.2rem;
+      background: var(--gris-bg);
+    }
+    .comp-icon { font-size: 2rem; display: block; margin-bottom: .4rem; }
+    .comp-name { font-weight: 700; font-size: .95rem; }
+    .comp-desc { font-size: .83rem; color: #5a6378; margin-top: .25rem; }
+
+    /* ── Tabla de conexiones ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .92rem;
+    }
+    th {
+      background: var(--azul);
+      color: #fff;
+      padding: .6rem 1rem;
+      text-align: left;
+      font-weight: 600;
+    }
+    th:first-child { border-radius: 8px 0 0 0; }
+    th:last-child  { border-radius: 0 8px 0 0; }
+    td { padding: .55rem 1rem; border-bottom: 1px solid var(--gris-borde); }
+    tr:last-child td { border-bottom: none; }
+    tr:nth-child(even) td { background: var(--gris-bg); }
+    .pin-arduino { font-family: var(--font-mono); font-weight: 700; color: var(--azul); }
+    .pin-comp    { font-family: var(--font-mono); font-weight: 700; color: var(--verde); }
+
+    /* ── Diagrama SVG ── */
+    .diagrama-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--gris-borde);
+      border-radius: 10px;
+      background: #fff;
+      padding: 1rem;
+    }
+    svg.diagrama {
+      display: block;
+      margin: 0 auto;
+      max-width: 100%;
+    }
+
+    /* ── Código ── */
+    .code-header {
+      background: #1e2430;
+      color: #a0aec0;
+      font-family: var(--font-mono);
+      font-size: .78rem;
+      padding: .45rem 1rem;
+      border-radius: 8px 8px 0 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .code-header .dots span {
+      display: inline-block;
+      width: 11px; height: 11px;
+      border-radius: 50%;
+      margin-right: 5px;
+    }
+    .dot-r { background: #ff5f56; }
+    .dot-y { background: #ffbd2e; }
+    .dot-g { background: #27c93f; }
+    pre {
+      background: var(--codigo-bg);
+      color: var(--codigo-fg);
+      font-family: var(--font-mono);
+      font-size: .85rem;
+      line-height: 1.65;
+      padding: 1.4rem 1.5rem;
+      border-radius: 0 0 8px 8px;
+      overflow-x: auto;
+      white-space: pre;
+    }
+    /* Coloreado de sintaxis manual */
+    .kw  { color: #c792ea; }   /* palabras clave */
+    .fn  { color: #82aaff; }   /* funciones */
+    .cm  { color: #546e7a; font-style: italic; } /* comentarios */
+    .st  { color: #c3e88d; }   /* strings */
+    .nb  { color: #f78c6c; }   /* números */
+    .pp  { color: #ffcb6b; }   /* preprocesador */
+
+    /* ── Pasos de instalación ── */
+    .pasos { counter-reset: paso; list-style: none; }
+    .pasos li {
+      counter-increment: paso;
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      align-items: flex-start;
+    }
+    .pasos li::before {
+      content: counter(paso);
+      flex-shrink: 0;
+      width: 32px; height: 32px;
+      background: var(--azul);
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: .9rem;
+    }
+    .pasos li p { padding-top: .35rem; }
+    .pasos li code {
+      background: #eef2fa;
+      border: 1px solid #ccd6f0;
+      border-radius: 4px;
+      padding: .1rem .4rem;
+      font-family: var(--font-mono);
+      font-size: .83rem;
+    }
+
+    /* ── Alertas ── */
+    .alerta {
+      border-radius: 8px;
+      padding: .9rem 1.2rem;
+      font-size: .9rem;
+      display: flex;
+      gap: .7rem;
+      align-items: flex-start;
+    }
+    .alerta-info    { background: #e8f0fe; border-left: 4px solid var(--azul); }
+    .alerta-warning { background: #fff7e6; border-left: 4px solid var(--naranja); }
+    .alerta-tip     { background: #e8f8ef; border-left: 4px solid var(--verde); }
+    .alerta-icon { font-size: 1.2rem; flex-shrink: 0; }
+
+    /* ── Patrones de audio ── */
+    .patron-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+    .patron {
+      border: 1px solid var(--gris-borde);
+      border-radius: 10px;
+      padding: 1rem;
+      text-align: center;
+    }
+    .patron .icono { font-size: 1.8rem; }
+    .patron h3 { font-size: .93rem; font-weight: 700; margin: .4rem 0 .25rem; }
+    .patron p  { font-size: .8rem; color: #5a6378; }
+    .onda {
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      gap: 3px;
+      height: 30px;
+      margin-top: .5rem;
+    }
+    .onda span {
+      display: inline-block;
+      width: 6px;
+      border-radius: 3px 3px 0 0;
+      background: var(--azul);
+    }
+
+    footer {
+      text-align: center;
+      padding: 2rem;
+      font-size: .83rem;
+      color: #8a95aa;
+      border-top: 1px solid var(--gris-borde);
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="icono" aria-hidden="true">♿</span>
+  <h1>Alerta de Proximidad para Personas Ciegas</h1>
+  <p>Proyecto Arduino Uno + Sensor PIR HC-SR501 + Buzzer Pasivo — guía completa de conexión y código</p>
+</header>
+
+<main>
+
+  <!-- ── COMPONENTES ── -->
+  <section class="card">
+    <h2>🔩 Componentes necesarios <span class="tag">Hardware</span></h2>
+    <div class="componentes-grid">
+      <div class="comp">
+        <span class="comp-icon">🖥️</span>
+        <div class="comp-name">Arduino Uno (Rev3)</div>
+        <div class="comp-desc">Microcontrolador principal. Cualquier clon compatible también funciona.</div>
+      </div>
+      <div class="comp">
+        <span class="comp-icon">📡</span>
+        <div class="comp-name">Sensor PIR HC-SR501</div>
+        <div class="comp-desc">Detecta calor corporal infrarrojo. Rango ~7 m, ángulo 120°.</div>
+      </div>
+      <div class="comp">
+        <span class="comp-icon">🔔</span>
+        <div class="comp-name">Buzzer Pasivo 5 V</div>
+        <div class="comp-desc">Genera tonos variables con PWM. Más versátil que el buzzer activo.</div>
+      </div>
+      <div class="comp">
+        <span class="comp-icon">🔌</span>
+        <div class="comp-name">Cables Dupont</div>
+        <div class="comp-desc">Macho-macho y macho-hembra para el protoboard.</div>
+      </div>
+      <div class="comp">
+        <span class="comp-icon">🧩</span>
+        <div class="comp-name">Protoboard (mini)</div>
+        <div class="comp-desc">Para montaje sin soldadura. 400 puntos es suficiente.</div>
+      </div>
+      <div class="comp">
+        <span class="comp-icon">💡</span>
+        <div class="comp-name">LED + resistencia 220 Ω</div>
+        <div class="comp-desc">Indicador visual de estado (opcional pero recomendado).</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── CONEXIONES ── -->
+  <section class="card">
+    <h2>🔗 Esquema de conexiones <span class="tag">Cableado</span></h2>
+
+    <h3 style="margin-bottom:.7rem;font-size:1rem;">Sensor PIR HC-SR501 → Arduino Uno</h3>
+    <table style="margin-bottom:1.5rem;">
+      <thead>
+        <tr>
+          <th>Pin PIR</th>
+          <th>Color cable sugerido</th>
+          <th>Pin Arduino</th>
+          <th>Descripción</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="pin-comp">VCC</td>
+          <td>🔴 Rojo</td>
+          <td class="pin-arduino">5 V</td>
+          <td>Alimentación del sensor</td>
+        </tr>
+        <tr>
+          <td class="pin-comp">OUT</td>
+          <td>🟡 Amarillo</td>
+          <td class="pin-arduino">D2</td>
+          <td>Señal de detección (HIGH = persona)</td>
+        </tr>
+        <tr>
+          <td class="pin-comp">GND</td>
+          <td>⚫ Negro</td>
+          <td class="pin-arduino">GND</td>
+          <td>Tierra común</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin-bottom:.7rem;font-size:1rem;">Buzzer Pasivo → Arduino Uno</h3>
+    <table style="margin-bottom:1.5rem;">
+      <thead>
+        <tr>
+          <th>Pin Buzzer</th>
+          <th>Color cable sugerido</th>
+          <th>Pin Arduino</th>
+          <th>Descripción</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="pin-comp">+ (positivo)</td>
+          <td>🔴 Rojo</td>
+          <td class="pin-arduino">D9</td>
+          <td>Señal PWM para generar tonos</td>
+        </tr>
+        <tr>
+          <td class="pin-comp">− (negativo)</td>
+          <td>⚫ Negro</td>
+          <td class="pin-arduino">GND</td>
+          <td>Tierra común</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin-bottom:.7rem;font-size:1rem;">LED de estado (opcional)</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Componente</th>
+          <th>Color cable</th>
+          <th>Pin Arduino</th>
+          <th>Descripción</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="pin-comp">Ánodo (+) LED</td>
+          <td>🟢 Verde</td>
+          <td class="pin-arduino">D13</td>
+          <td>A través de resistencia 220 Ω</td>
+        </tr>
+        <tr>
+          <td class="pin-comp">Cátodo (−) LED</td>
+          <td>⚫ Negro</td>
+          <td class="pin-arduino">GND</td>
+          <td>Tierra</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="alerta alerta-warning" style="margin-top:1.2rem;">
+      <span class="alerta-icon">⚠️</span>
+      <div>El pin <strong>D13</strong> ya tiene un LED integrado en la placa Arduino Uno, por lo que el LED externo es completamente opcional. Si lo usas, siempre incluye la resistencia de 220 Ω para no quemar el LED.</div>
+    </div>
+  </section>
+
+  <!-- ── DIAGRAMA ── -->
+  <section class="card">
+    <h2>📐 Diagrama de conexión <span class="tag">Visual</span></h2>
+    <div class="diagrama-wrap">
+      <svg class="diagrama" viewBox="0 0 820 420" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI',sans-serif" font-size="12">
+
+        <!-- Fondo -->
+        <rect width="820" height="420" fill="#f8fafc" rx="8"/>
+
+        <!-- ═══ ARDUINO UNO ═══ -->
+        <rect x="300" y="100" width="220" height="230" rx="10" fill="#1a6fbe" stroke="#0d4f8c" stroke-width="2"/>
+        <text x="410" y="128" text-anchor="middle" fill="white" font-weight="700" font-size="14">ARDUINO UNO</text>
+
+        <!-- Pines izquierda (digitales) -->
+        <!-- D2 -->
+        <rect x="285" y="155" width="18" height="10" rx="2" fill="#ffd700"/>
+        <text x="276" y="163" text-anchor="end" fill="#1e2430" font-size="11">D2</text>
+        <!-- D9 -->
+        <rect x="285" y="185" width="18" height="10" rx="2" fill="#ffd700"/>
+        <text x="276" y="193" text-anchor="end" fill="#1e2430" font-size="11">D9</text>
+        <!-- D13 -->
+        <rect x="285" y="215" width="18" height="10" rx="2" fill="#ffd700"/>
+        <text x="276" y="223" text-anchor="end" fill="#1e2430" font-size="11">D13</text>
+
+        <!-- Pines derecha (alimentación) -->
+        <!-- 5V -->
+        <rect x="517" y="155" width="18" height="10" rx="2" fill="#ff5555"/>
+        <text x="542" y="163" fill="#1e2430" font-size="11">5V</text>
+        <!-- GND -->
+        <rect x="517" y="185" width="18" height="10" rx="2" fill="#333"/>
+        <text x="542" y="193" fill="#1e2430" font-size="11">GND</text>
+        <!-- GND2 -->
+        <rect x="517" y="215" width="18" height="10" rx="2" fill="#333"/>
+        <text x="542" y="223" fill="#1e2430" font-size="11">GND</text>
+
+        <!-- Logo Arduino simplificado -->
+        <circle cx="410" cy="270" r="28" fill="none" stroke="white" stroke-width="2" opacity=".4"/>
+        <text x="410" y="276" text-anchor="middle" fill="white" font-size="18" opacity=".5">∞</text>
+
+        <!-- ═══ SENSOR PIR ═══ -->
+        <rect x="40" y="110" width="160" height="100" rx="8" fill="#1c8a4a" stroke="#156b39" stroke-width="2"/>
+        <text x="120" y="132" text-anchor="middle" fill="white" font-weight="700" font-size="13">SENSOR PIR</text>
+        <text x="120" y="148" text-anchor="middle" fill="white" font-size="10">HC-SR501</text>
+        <!-- Semiesfera del sensor -->
+        <ellipse cx="120" cy="185" rx="28" ry="14" fill="none" stroke="#a8e6c0" stroke-width="1.5" stroke-dasharray="4,3"/>
+        <circle cx="120" cy="178" r="16" fill="#2ab362" opacity=".7"/>
+        <text x="120" y="183" text-anchor="middle" fill="white" font-size="10">dome</text>
+
+        <!-- Pines PIR -->
+        <!-- VCC -->
+        <rect x="195" y="128" width="14" height="8" rx="1" fill="#ff5555"/>
+        <text x="193" y="125" text-anchor="end" fill="#1e2430" font-size="10">VCC</text>
+        <!-- OUT -->
+        <rect x="195" y="152" width="14" height="8" rx="1" fill="#ffd700"/>
+        <text x="193" y="149" text-anchor="end" fill="#1e2430" font-size="10">OUT</text>
+        <!-- GND -->
+        <rect x="195" y="176" width="14" height="8" rx="1" fill="#333"/>
+        <text x="193" y="173" text-anchor="end" fill="#1e2430" font-size="10">GND</text>
+
+        <!-- Cables PIR → Arduino -->
+        <!-- VCC PIR → 5V Arduino (rojo) -->
+        <polyline points="209,132 240,132 240,90 560,90 560,160 535,160" fill="none" stroke="#e53e3e" stroke-width="2.5" stroke-linecap="round"/>
+        <!-- OUT PIR → D2 (amarillo) -->
+        <polyline points="209,156 240,156 240,160 303,160" fill="none" stroke="#d97706" stroke-width="2.5" stroke-linecap="round"/>
+        <!-- GND PIR → GND (negro) -->
+        <polyline points="209,180 245,180 245,190 535,190" fill="none" stroke="#4a5568" stroke-width="2.5" stroke-linecap="round"/>
+
+        <!-- ═══ BUZZER ═══ -->
+        <rect x="590" y="110" width="155" height="90" rx="8" fill="#7b2d8b" stroke="#5c2069" stroke-width="2"/>
+        <text x="667" y="132" text-anchor="middle" fill="white" font-weight="700" font-size="13">BUZZER</text>
+        <text x="667" y="148" text-anchor="middle" fill="white" font-size="10">Pasivo 5V</text>
+        <!-- Símbolo buzzer -->
+        <circle cx="667" cy="173" r="14" fill="none" stroke="#d9a3e8" stroke-width="2"/>
+        <text x="667" y="178" text-anchor="middle" fill="white" font-size="16">♪</text>
+
+        <!-- Pines Buzzer -->
+        <!-- + -->
+        <rect x="590" y="128" width="12" height="8" rx="1" fill="#ffd700"/>
+        <text x="588" y="125" text-anchor="end" fill="#1e2430" font-size="10">+</text>
+        <!-- − -->
+        <rect x="590" y="152" width="12" height="8" rx="1" fill="#333"/>
+        <text x="588" y="149" text-anchor="end" fill="#1e2430" font-size="10">−</text>
+
+        <!-- Cables Buzzer → Arduino -->
+        <!-- + Buzzer → D9 (amarillo) -->
+        <polyline points="590,132 560,132 560,105 275,105 275,190 303,190" fill="none" stroke="#d97706" stroke-width="2.5" stroke-linecap="round"/>
+        <!-- − Buzzer → GND (negro) -->
+        <polyline points="590,156 565,156 565,220 535,220" fill="none" stroke="#4a5568" stroke-width="2.5" stroke-linecap="round"/>
+
+        <!-- ═══ LED (opcional) ═══ -->
+        <rect x="590" y="250" width="155" height="80" rx="8" fill="#718096" stroke="#4a5568" stroke-width="2"/>
+        <text x="667" y="272" text-anchor="middle" fill="white" font-weight="700" font-size="12">LED + 220Ω</text>
+        <text x="667" y="287" text-anchor="middle" fill="white" font-size="10">(opcional)</text>
+        <circle cx="667" cy="308" r="12" fill="#68d391" opacity=".8"/>
+        <circle cx="667" cy="308" r="6"  fill="#f0fff4"/>
+
+        <!-- Pines LED -->
+        <rect x="590" y="268" width="12" height="8" rx="1" fill="#ffd700"/>
+        <text x="588" y="265" text-anchor="end" fill="#1e2430" font-size="10">+</text>
+        <rect x="590" y="288" width="12" height="8" rx="1" fill="#333"/>
+        <text x="588" y="285" text-anchor="end" fill="#1e2430" font-size="10">−</text>
+
+        <!-- Cables LED → Arduino -->
+        <polyline points="590,272 570,272 570,110 555,110 555,75 280,75 280,220 303,220" fill="none" stroke="#68d391" stroke-width="2" stroke-linecap="round" stroke-dasharray="6,3"/>
+        <polyline points="590,292 572,292 572,230 535,230" fill="none" stroke="#4a5568" stroke-width="2" stroke-linecap="round" stroke-dasharray="6,3"/>
+
+        <!-- Leyenda -->
+        <rect x="30" y="350" width="12" height="4" rx="2" fill="#e53e3e"/>
+        <text x="47" y="357" fill="#4a5568" font-size="11">5V (alimentación)</text>
+        <rect x="150" y="350" width="12" height="4" rx="2" fill="#d97706"/>
+        <text x="167" y="357" fill="#4a5568" font-size="11">Señal / datos</text>
+        <rect x="270" y="350" width="12" height="4" rx="2" fill="#4a5568"/>
+        <text x="287" y="357" fill="#4a5568" font-size="11">GND (tierra)</text>
+        <rect x="390" y="350" width="12" height="4" rx="2" fill="#68d391" stroke="#68d391" stroke-dasharray="4,2"/>
+        <text x="407" y="357" fill="#4a5568" font-size="11">LED (opcional)</text>
+
+        <!-- Ondas de detección -->
+        <text x="50" y="360" text-anchor="middle" fill="#1c8a4a" opacity=".3" font-size="40">))))</text>
+      </svg>
+    </div>
+
+    <div class="alerta alerta-info" style="margin-top:1rem;">
+      <span class="alerta-icon">💡</span>
+      <div>El sensor PIR HC-SR501 tiene dos potenciómetros en la parte trasera: uno para <strong>sensibilidad</strong> (distancia 3-7 m) y otro para <strong>tiempo de retención</strong> de la señal (5 s – 5 min). Gíralos según el entorno.</div>
+    </div>
+  </section>
+
+  <!-- ── CÓDIGO ── -->
+  <section class="card">
+    <h2>💻 Código Arduino <span class="tag">Sketch</span></h2>
+
+    <div class="code-header">
+      <div class="dots">
+        <span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span>
+      </div>
+      <span>pir_buzzer_ciego.ino</span>
+      <span>Arduino IDE 2.x</span>
+    </div>
+    <pre><span class="cm">/*
+ * ============================================================
+ *  Proyecto: Alerta para Personas Ciegas - Sensor PIR + Buzzer
+ *  Hardware: Arduino Uno + Sensor PIR HC-SR501 + Buzzer Pasivo
+ *  Descripción: Detecta personas y emite patrones sonoros
+ *               diferenciados para avisar al usuario ciego.
+ * ============================================================
+ */</span>
+
+<span class="cm">// ── Pines ────────────────────────────────────────────────────</span>
+<span class="kw">const int</span> PIR_PIN    = <span class="nb">2</span>;   <span class="cm">// Salida digital del HC-SR501</span>
+<span class="kw">const int</span> BUZZER_PIN = <span class="nb">9</span>;   <span class="cm">// Buzzer pasivo (PWM necesario)</span>
+<span class="kw">const int</span> LED_PIN    = <span class="nb">13</span>;  <span class="cm">// LED de estado integrado en el Uno</span>
+
+<span class="cm">// ── Configuración de tiempos (ms) ────────────────────────────</span>
+<span class="kw">const unsigned long</span> COOLDOWN_MS    = <span class="nb">3000</span>;  <span class="cm">// Pausa entre alertas</span>
+<span class="kw">const unsigned long</span> DETECTION_HOLD = <span class="nb">200</span>;   <span class="cm">// Anti-rebote del PIR</span>
+
+<span class="cm">// ── Estado global ────────────────────────────────────────────</span>
+<span class="kw">unsigned long</span> lastAlertTime  = <span class="nb">0</span>;
+<span class="kw">bool</span>          personaPresente = <span class="kw">false</span>;
+
+<span class="cm">// ── Prototipos ───────────────────────────────────────────────</span>
+<span class="kw">void</span> <span class="fn">alertaPersona</span>();
+<span class="kw">void</span> <span class="fn">beep</span>(<span class="kw">int</span> frecuencia, <span class="kw">int</span> duracion, <span class="kw">int</span> pausa = <span class="nb">80</span>);
+<span class="kw">void</span> <span class="fn">silencio</span>();
+
+<span class="cm">// ─────────────────────────────────────────────────────────────</span>
+<span class="kw">void</span> <span class="fn">setup</span>() {
+  <span class="fn">pinMode</span>(PIR_PIN,    INPUT);
+  <span class="fn">pinMode</span>(BUZZER_PIN, OUTPUT);
+  <span class="fn">pinMode</span>(LED_PIN,    OUTPUT);
+
+  <span class="fn">Serial</span>.<span class="fn">begin</span>(<span class="nb">9600</span>);
+  <span class="fn">Serial</span>.<span class="fn">println</span>(<span class="fn">F</span>(<span class="st">"Sistema iniciado. Calentando sensor PIR..."</span>));
+
+  <span class="cm">// El HC-SR501 necesita ~30 s de estabilización al encender.</span>
+  <span class="kw">for</span> (<span class="kw">int</span> i = <span class="nb">0</span>; i &lt; <span class="nb">30</span>; i++) {
+    <span class="fn">digitalWrite</span>(LED_PIN, HIGH);
+    <span class="fn">delay</span>(<span class="nb">500</span>);
+    <span class="fn">digitalWrite</span>(LED_PIN, LOW);
+    <span class="fn">delay</span>(<span class="nb">500</span>);
+  }
+  <span class="fn">Serial</span>.<span class="fn">println</span>(<span class="fn">F</span>(<span class="st">"\nListo. Monitoreando..."</span>));
+
+  <span class="cm">// Pitido de confirmación: sistema listo</span>
+  <span class="fn">beep</span>(<span class="nb">1000</span>, <span class="nb">150</span>);
+  <span class="fn">beep</span>(<span class="nb">1500</span>, <span class="nb">150</span>);
+  <span class="fn">beep</span>(<span class="nb">2000</span>, <span class="nb">200</span>);
+}
+
+<span class="cm">// ─────────────────────────────────────────────────────────────</span>
+<span class="kw">void</span> <span class="fn">loop</span>() {
+  <span class="kw">int</span> lectura = <span class="fn">digitalRead</span>(PIR_PIN);
+  <span class="kw">unsigned long</span> ahora = <span class="fn">millis</span>();
+
+  <span class="kw">if</span> (lectura == HIGH) {
+    <span class="fn">delay</span>(DETECTION_HOLD);          <span class="cm">// anti-rebote</span>
+    <span class="kw">if</span> (<span class="fn">digitalRead</span>(PIR_PIN) == HIGH) {
+
+      <span class="kw">if</span> (!personaPresente) {
+        personaPresente = <span class="kw">true</span>;
+        <span class="fn">Serial</span>.<span class="fn">println</span>(<span class="fn">F</span>(<span class="st">"¡Persona detectada!"</span>));
+      }
+
+      <span class="kw">if</span> (ahora - lastAlertTime &gt;= COOLDOWN_MS) {
+        lastAlertTime = ahora;
+        <span class="fn">alertaPersona</span>();
+      }
+    }
+  } <span class="kw">else</span> {
+    <span class="kw">if</span> (personaPresente) {
+      personaPresente = <span class="kw">false</span>;
+      <span class="fn">Serial</span>.<span class="fn">println</span>(<span class="fn">F</span>(<span class="st">"Zona despejada."</span>));
+      <span class="fn">digitalWrite</span>(LED_PIN, LOW);
+    }
+  }
+}
+
+<span class="cm">// ─────────────────────────────────────────────────────────────</span>
+<span class="cm">// Patrón: tres pitidos cortos + uno largo (señal universal)</span>
+<span class="cm">// ─────────────────────────────────────────────────────────────</span>
+<span class="kw">void</span> <span class="fn">alertaPersona</span>() {
+  <span class="fn">digitalWrite</span>(LED_PIN, HIGH);
+
+  <span class="fn">beep</span>(<span class="nb">2000</span>, <span class="nb">120</span>, <span class="nb">100</span>);  <span class="cm">// pitido 1</span>
+  <span class="fn">beep</span>(<span class="nb">2000</span>, <span class="nb">120</span>, <span class="nb">100</span>);  <span class="cm">// pitido 2</span>
+  <span class="fn">beep</span>(<span class="nb">2000</span>, <span class="nb">120</span>, <span class="nb">100</span>);  <span class="cm">// pitido 3</span>
+  <span class="fn">delay</span>(<span class="nb">150</span>);
+  <span class="fn">beep</span>(<span class="nb">1200</span>, <span class="nb">500</span>, <span class="nb">0</span>);    <span class="cm">// pitido largo (confirma presencia)</span>
+
+  <span class="fn">digitalWrite</span>(LED_PIN, LOW);
+}
+
+<span class="cm">// ─────────────────────────────────────────────────────────────</span>
+<span class="cm">// frecuencia: Hz | duracion: ms | pausa: ms post-tono</span>
+<span class="cm">// ─────────────────────────────────────────────────────────────</span>
+<span class="kw">void</span> <span class="fn">beep</span>(<span class="kw">int</span> frecuencia, <span class="kw">int</span> duracion, <span class="kw">int</span> pausa) {
+  <span class="fn">tone</span>(BUZZER_PIN, frecuencia, duracion);
+  <span class="fn">delay</span>(duracion);
+  <span class="fn">noTone</span>(BUZZER_PIN);
+  <span class="kw">if</span> (pausa &gt; <span class="nb">0</span>) <span class="fn">delay</span>(pausa);
+}
+
+<span class="kw">void</span> <span class="fn">silencio</span>() {
+  <span class="fn">noTone</span>(BUZZER_PIN);
+  <span class="fn">digitalWrite</span>(LED_PIN, LOW);
+}</pre>
+  </section>
+
+  <!-- ── PATRÓN DE AUDIO ── -->
+  <section class="card">
+    <h2>🎵 Patrón de alerta sonora <span class="tag">Audio</span></h2>
+    <p style="margin-bottom:1.2rem;color:#5a6378;">El sistema usa un patrón de 4 tonos inspirado en señales acústicas internacionales, fácil de reconocer incluso en ambientes ruidosos.</p>
+    <div class="patron-grid">
+      <div class="patron">
+        <div class="icono">🔉</div>
+        <h3>Pitido 1 — 2000 Hz</h3>
+        <p>120 ms · corto y agudo</p>
+        <div class="onda">
+          <span style="height:20px"></span><span style="height:20px"></span><span style="height:20px"></span>
+        </div>
+      </div>
+      <div class="patron">
+        <div class="icono">🔉</div>
+        <h3>Pitido 2 — 2000 Hz</h3>
+        <p>120 ms · corto y agudo</p>
+        <div class="onda">
+          <span style="height:20px"></span><span style="height:20px"></span><span style="height:20px"></span>
+        </div>
+      </div>
+      <div class="patron">
+        <div class="icono">🔉</div>
+        <h3>Pitido 3 — 2000 Hz</h3>
+        <p>120 ms · corto y agudo</p>
+        <div class="onda">
+          <span style="height:20px"></span><span style="height:20px"></span><span style="height:20px"></span>
+        </div>
+      </div>
+      <div class="patron">
+        <div class="icono">🔊</div>
+        <h3>Pitido 4 — 1200 Hz</h3>
+        <p>500 ms · largo y grave (confirmación)</p>
+        <div class="onda">
+          <span style="height:14px"></span><span style="height:14px"></span><span style="height:14px"></span><span style="height:14px"></span><span style="height:14px"></span><span style="height:14px"></span><span style="height:14px"></span><span style="height:14px"></span>
+        </div>
+      </div>
+    </div>
+    <div class="alerta alerta-tip" style="margin-top:1.2rem;">
+      <span class="alerta-icon">✅</span>
+      <div>El cooldown de <strong>3 segundos</strong> evita que el buzzer suene sin parar mientras la persona permanece en el rango. Puedes ajustar <code>COOLDOWN_MS</code> en el código según tus necesidades.</div>
+    </div>
+  </section>
+
+  <!-- ── PASOS DE INSTALACIÓN ── -->
+  <section class="card">
+    <h2>🚀 Pasos para cargar el código <span class="tag">Guía</span></h2>
+    <ol class="pasos">
+      <li><p>Descarga e instala el <strong>Arduino IDE 2.x</strong> desde arduino.cc/en/software</p></li>
+      <li><p>Conecta el <strong>Arduino Uno</strong> al PC con el cable USB-B.</p></li>
+      <li><p>Abre el archivo <code>pir_buzzer_ciego.ino</code> con Arduino IDE.</p></li>
+      <li><p>Selecciona la placa: <code>Herramientas → Placa → Arduino Uno</code></p></li>
+      <li><p>Selecciona el puerto: <code>Herramientas → Puerto → COMx</code> (Windows) o <code>/dev/ttyACM0</code> (Linux/Mac)</p></li>
+      <li><p>Haz clic en <strong>Subir</strong> (→). El LED parpadeará 30 segundos mientras el sensor PIR se estabiliza.</p></li>
+      <li><p>Escucharás <strong>tres pitidos ascendentes</strong> cuando el sistema esté listo para detectar.</p></li>
+      <li><p>Abre el <strong>Monitor Serie</strong> a 9600 baudios para ver los mensajes de detección en tiempo real.</p></li>
+    </ol>
+  </section>
+
+  <!-- ── AJUSTE DEL SENSOR ── -->
+  <section class="card">
+    <h2>⚙️ Ajuste del sensor PIR <span class="tag">Configuración</span></h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+      <div class="alerta alerta-info">
+        <span class="alerta-icon">🔄</span>
+        <div>
+          <strong>Potenciómetro de sensibilidad (Sx)</strong><br>
+          Girarlo en sentido horario aumenta el rango de detección (hasta ~7 m). Para interiores, dejarlo a la mitad es ideal.
+        </div>
+      </div>
+      <div class="alerta alerta-info">
+        <span class="alerta-icon">⏱️</span>
+        <div>
+          <strong>Potenciómetro de tiempo (Tx)</strong><br>
+          Controla cuánto tiempo la señal OUT permanece en HIGH tras una detección. Ajústalo al mínimo (5 s) para que el código gestione el cooldown.
+        </div>
+      </div>
+    </div>
+    <div class="alerta alerta-warning" style="margin-top:1rem;">
+      <span class="alerta-icon">⚠️</span>
+      <div>El HC-SR501 necesita <strong>30-60 segundos de calentamiento</strong> al encenderse. Durante ese tiempo puede generar falsas detecciones. El código espera esos 30 s antes de monitorear.</div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Proyecto educativo de accesibilidad — Arduino Uno + PIR HC-SR501 + Buzzer Pasivo &nbsp;|&nbsp; 2024
+</footer>
+
+</body>
+</html>
